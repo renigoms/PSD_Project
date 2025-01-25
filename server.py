@@ -17,8 +17,9 @@ class Server:
         try:
             server_socket.bind((self.host, self.port))
             server_socket.listen()
-        except:
-            return print(Fore.RED + '\nIt was not possible to start on to the server !!' + Style.RESET_ALL)
+            print("started server")
+        except Exception as e:
+            return print(Fore.RED + f'\nIt was not possible to start on to the server !! {e}' + Style.RESET_ALL)
 
         while True:
             client, addr = server_socket.accept()
@@ -49,5 +50,5 @@ class Server:
 
 
 if __name__ == '__main__':
-    server = Server('localhost', 50000)
+    server = Server('localhost', 50001)
     server.run()
