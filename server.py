@@ -69,6 +69,31 @@ class Server:
     def broadcast(self, message: str, sender_socket: socket.socket = None):
         for client_socket in list(self.clients.keys()):
             if client_socket != sender_socket:
+            server_socket.bind((self.host, self.port))
+            server_socket.listen()
+            print("started server")
+        except Exception as e:
+            return print(Fore.RED + f'\nIt was not possible to start on to the server !! {e}' + Style.RESET_ALL)
+
+        while True:
+            client, addr = server_socket.accept()
+            self.clients.append(client)
+
+            thread = Thread(target=self.messages_treatment, args=(client,))
+            thread.start()
+
+    def messages_treatment(self, client_socket: socket):
+        while True:
+            try:
+                message = client_socket.recv(1024)
+                self.broadcast(message, client_socket)
+            except:
+                self.delete_client(client_socket)
+                break
+
+    def broadcast(self, message: str, client: socket):
+        for client_item in self.clients:
+            if client_item != client:
                 try:
                     client_socket.send(message.encode("utf-8"))
                 except (ConnectionResetError, ConnectionAbortedError):
@@ -90,5 +115,5 @@ class Server:
 
 
 if __name__ == '__main__':
-    server = Server('localhost', 50000)
+    server = Server('localhost', 50001)
     server.run()
