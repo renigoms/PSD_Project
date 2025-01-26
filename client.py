@@ -14,41 +14,64 @@ class Client:
 
         try:
             client_socket.connect((self.host, self.port))
-        except:
-            return print(Fore.RED + '\nit was not possible to connect to the server !!!\n' + Style.RESET_ALL)
 
-        username = input('\nUsername > ')
-        print(Fore.GREEN + '\nConnected user!' + Style.RESET_ALL)
+        except ConnectionRefusedError:
+            print(Fore.RED + '\nNão foi possível conectar ao servidor. Verifique se ele está ativo!' + Style.RESET_ALL)
+            return
 
-        thread01 = Thread(target=self.receive_message, args=[client_socket])
-        thread02 = Thread(target=self.send_messages, args=[client_socket, username])
+        username = input('\nDigite seu nome de usuário: ').strip().capitalize()
+        if not username:
+            print(Fore.RED + 'Nome de usuário inválido. Encerrando conexão.' + Style.RESET_ALL)
+            return
 
-        thread01.start()
-        thread02.start()
+        try:
+            try:
+                client_socket.send(username.encode('utf-8'))
+            except:
+                print(Fore.RED + 'Erro ao enviar o nome de usuário. Encerrando conexão.' + Style.RESET_ALL)
+                return
 
-    def receive_message(self, client_socket: socket):
+            print(Fore.GREEN + '\nConexão estabelecida com sucesso!' + Style.RESET_ALL)
+
+            thread_receive = Thread(target=self.receive_message, args=[client_socket])
+            thread_send = Thread(target=self.send_messages, args=[client_socket, username])
+
+            thread_receive.start()
+            thread_send.start()
+
+            # Aguarda ambas as threads finalizarem
+            thread_receive.join()
+            thread_send.join()
+        except KeyboardInterrupt:
+            print(Fore.YELLOW + '\nConexão interrompida manualmente. Encerrando...' + Style.RESET_ALL)
+
+    def receive_message(self, client_socket: socket.socket):
         while True:
             try:
                 message = client_socket.recv(1024).decode('utf-8')
-                print(Fore.YELLOW+message + '\n'+Style.RESET_ALL)
-            except:
-                print(Fore.RED + '\nit was not possible stay to connect on to the server !!\n' + Style.RESET_ALL)
-                print('Press <Enter> to continue...')
+                if not message:
+                    break
+                print(Fore.YELLOW + message + Style.RESET_ALL)
+            except ConnectionResetError:
+                print(Fore.RED + '\nConexão perdida com o servidor!' + Style.RESET_ALL)
+                print('Pressione <Enter> para sair...')
                 client_socket.close()
                 break
 
-    def send_messages(self, client_socket: socket, username: str):
-        while True:
-            try:
-                message = input('\n')
-                client_socket.send(f'{username}: {message}'.encode('utf-8'))
-            except:
-                return
-
+    def send_messages(self, client_socket: socket.socket, username: str):
+        try:
+            while True:
+                message = input()
+                if not message.strip():
+                    print(Fore.RED + 'Mensagem vazia. Digite algo válido.' + Style.RESET_ALL)
+                    continue
+                client_socket.send(message.encode('utf-8'))
+        except (ConnectionResetError, BrokenPipeError):
+            print(Fore.RED + '\nErro ao enviar mensagem. Conexão encerrada!' + Style.RESET_ALL)
+        finally:
+            client_socket.close()
 
 
 if __name__ == '__main__':
     client = Client('localhost', 50000)
     client.run()
-
-
