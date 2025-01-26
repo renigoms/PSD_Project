@@ -90,5 +90,5 @@ class Server:
 
 
 if __name__ == '__main__':
-    server = Server('localhost', 50000)
+    server = Server('localhost', 50001)
     server.run()
