@@ -7,7 +7,7 @@ class Server:
     def __init__(self, host, port):
         self.host = host
         self.port = port
-        self.clients = {}  # Dicionário para armazenar clientes e seus nomes
+        self.clients = {}
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     def run(self):
@@ -31,13 +31,20 @@ class Server:
 
     def handle_new_client(self, client_socket: socket.socket, address: tuple):
         try:
-            # client_socket.send("Digite seu nome: ".encode("utf-8"))
-            name = client_socket.recv(1024).decode("utf-8").strip()
-
+            name = client_socket.recv(1024).decode("utf-8").capitalize()
             if not name:
                 client_socket.close()
                 return
-
+            if name in self.clients.values():
+                header = 'ERROR'.ljust(10)
+                message = 'Usuário já conectado'
+                client_socket.send((header + message).encode('utf-8'))
+                client_socket.close()
+                return
+            # Envia uma flag de sucesso para o cliente
+            header = 'OK'.ljust(10)  # Header indicando sucesso
+            message = 'Conexão estabelecida com sucesso!'
+            client_socket.send((header + message).encode('utf-8'))
             self.clients[client_socket] = name
             print(Fore.BLUE + f"{name} ({address}) conectou-se ao servidor." + Style.RESET_ALL)
 
@@ -55,9 +62,14 @@ class Server:
             while True:
                 message = client_socket.recv(1024).decode("utf-8").strip()
                 if message:
-                    broadcast_message = f"{name}: {message}"
-                    print(broadcast_message)
-                    self.broadcast(broadcast_message, client_socket)
+                    if message.startswith('@'):
+                        recipient_name, msg = message.split(' ', 1)
+                        recipient_name = recipient_name[1:]
+                        self.send_private_message(recipient_name, f'{name}: {msg}', client_socket)
+                    else:
+                        broadcast_message = f"{name}: {message}"
+                        print(broadcast_message)
+                        self.broadcast(broadcast_message, client_socket)
                 else:
                     # Encerra a conexão se a mensagem estiver vazia
                     break
@@ -87,6 +99,18 @@ class Server:
             client_socket.close()
         self.server_socket.close()
         print(Fore.RED + "Servidor fechado." + Style.RESET_ALL)
+
+    def send_private_message(self, recipient_name: str, message: str, sender_socket: socket.socket):
+        for client_socket, client_name in self.clients.items():
+            if client_name == recipient_name.capitalize():
+                try:
+                    client_socket.send(message.encode('utf-8'))
+                    sender_name = self.clients.get(client_socket, 'Desconhecido')
+                    print(Fore.YELLOW + f'Mensagem privada de {sender_name} para {recipient_name}: {message}' + Style.RESET_ALL)
+                except (ConnectionResetError, ConnectionAbortedError):
+                    self.remove_client(client_socket)
+                return
+        sender_socket.send((Fore.RED + f'Erro: {recipient_name} não encontrado' + Style.RESET_ALL).encode())
 
 
 if __name__ == '__main__':
