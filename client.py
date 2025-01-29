@@ -85,6 +85,9 @@ class Client:
                 print('Pressione <Enter> para sair...')
                 client_socket.close()
                 break
+            except OSError as e:
+                print(Fore.RED + f'\nErro no socket: {e}' + Style.RESET_ALL)
+                break
 
     @staticmethod
     def _send_messages(client_socket: socket.socket, username: str):
@@ -95,7 +98,7 @@ class Client:
                     print(Fore.RED + 'Mensagem vazia. Digite algo válido.' + Style.RESET_ALL)
                     continue
                 parts = message.split(' ', 3)  # Divide em até 4 partes: comando, "tag", username e mensagem
-                if len(parts) != REQUIRED_MESSAGE_PARTS or not message.startswith('-msg'):
+                if len(parts) != REQUIRED_MESSAGE_PARTS and message.startswith('-msg'):
                     print(
                         Fore.YELLOW
                         + 'Formato inválido para mensagem. Use: -msg tag <usuário|grupo> <mensagem>'
@@ -104,15 +107,24 @@ class Client:
                     )
                     continue
                 if message.startswith('-msg') and parts[1].upper() == 'U':
+                    try:
+                        client_socket.send(message.encode('utf-8'))
+                    except (ConnectionResetError, BrokenPipeError):
+                        print(Fore.RED + '\nErro ao enviar mensagem. Conexão perdida!' + Style.RESET_ALL)
+                        break
+                    continue
+                try:
                     client_socket.send(message.encode('utf-8'))
-                    continue
-                else:
-                    print(
-                        Fore.YELLOW
-                        + 'Formato inválido para mensagem privada. Use: -msg U <usuário> <mensagem>'
-                        + Style.RESET_ALL
-                    )
-                    continue
+                except (ConnectionResetError, BrokenPipeError):
+                    print(Fore.RED + '\nErro ao enviar mensagem. Conexão perdida!' + Style.RESET_ALL)
+                    break
+                # else:
+                #     print(
+                #         Fore.YELLOW
+                #         + 'Formato inválido'
+                #         + Style.RESET_ALL
+                #     )
+                #     break
         except (ConnectionResetError, BrokenPipeError):
             print(Fore.RED + '\nErro ao enviar mensagem. Conexão encerrada!' + Style.RESET_ALL)
         finally:
