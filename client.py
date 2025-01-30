@@ -1,7 +1,11 @@
+import platform
+import select
 import socket
-from colorama import Style, Fore
+import sys
+import threading
 from threading import Thread
-from constants import REQUIRED_MESSAGE_PARTS, REQUIRED_NAME_GROUP
+from constants import REQUIRED_MESSAGE_PARTS
+from colorama import Style, Fore
 
 
 class Client:
@@ -9,6 +13,8 @@ class Client:
     def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
+        self.running = threading.Event()
+        self.running.set()
 
     def run(self):
         client_socket = self._connect_to_server()
@@ -23,10 +29,14 @@ class Client:
 
     @staticmethod
     def _get_username():
-        username = input('\nDigite seu nome de usuário: ').strip()
-        if not username:
-            print(Fore.RED + 'Nome de usuário inválido. Encerrando conexão.' + Style.RESET_ALL)
-        return username
+        try:
+            username = input('\nDigite seu nome de usuário: ').strip()
+            if not username:
+                print(Fore.RED + 'Nome de usuário inválido. Encerrando conexão.' + Style.RESET_ALL)
+            return username
+        except KeyboardInterrupt:
+            print(Fore.YELLOW + '\nEntrada cancelada pelo usuário. Encerrando conexão...' + Style.RESET_ALL)
+            return None
 
     def _connect_to_server(self) -> socket.socket | None:
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -69,7 +79,15 @@ class Client:
             thread_receive.join()
             thread_send.join()
         except KeyboardInterrupt:
-            print(Fore.YELLOW + '\nConexão interrompida manualmente. Encerrando...' + Style.RESET_ALL)
+            self.running.clear()  # Desativa a flag, indicando que o programa está encerrando
+            print(Fore.YELLOW + '\nEncerrando conexão...' + Style.RESET_ALL)
+            try:
+                client_socket.send('-sair'.encode('utf-8'))  # Envia comando de saída ao servidor
+            except (BrokenPipeError, OSError):
+                pass  # Se a conexão já estiver encerrada, não faz nada
+            finally:
+                client_socket.close()
+                print(Fore.YELLOW + '\nConexão interrompida manualmente. Encerrando...' + Style.RESET_ALL)
 
     @staticmethod
     def _receive_message(client_socket: socket.socket):
@@ -90,10 +108,26 @@ class Client:
 
     def _send_messages(self, client_socket: socket.socket, username: str):
         try:
-            while True:
-                message = input()
-                if not message.strip():
+            while self.running.is_set():
+                # Usa select para verificar se há entrada disponível no stdin
+                message = Client.check_stdin()
+                if message is None:
+                    continue
+                if not message:
                     print(Fore.RED + 'Mensagem vazia. Digite algo válido.' + Style.RESET_ALL)
+                    continue
+                if message == '-sair':
+                    client_socket.send(message.encode('utf-8'))
+                    print(Fore.YELLOW + f"{username} solicitou desconexão." + Style.RESET_ALL)
+                    break
+                if message.startswith('-criargrupo '):
+                    parts = message.split(' ', 1)  # Divide em 2 partes, o comando e o nome do grupo
+                    if not parts[1].strip():  # Verifica se o nome do grupo está vazio ou só tem espaços
+                        print(Fore.YELLOW
+                              + 'Erro: Nome do grupo não pode estar vazio. Use: -criargrupo <nome_do_grupo>'
+                              + Style.RESET_ALL)
+                        continue
+                    client_socket.send(message.encode('utf-8'))
                     continue
                 parts = message.split(' ', 3)  # Divide em até 4 partes: comando, "tag", username e mensagem
                 if len(parts) != REQUIRED_MESSAGE_PARTS and message.startswith('-msg'):
@@ -105,21 +139,27 @@ class Client:
                     )
                     continue
                 if message.startswith('-msg') and parts[1].upper() == 'U':
-                    try:
-                        client_socket.send(message.encode('utf-8'))
-                    except (ConnectionResetError, BrokenPipeError):
-                        print(Fore.RED + '\nErro ao enviar mensagem. Conexão perdida!' + Style.RESET_ALL)
-                        break
-                    continue
-                try:
                     client_socket.send(message.encode('utf-8'))
-                except (ConnectionResetError, BrokenPipeError):
-                    print(Fore.RED + '\nErro ao enviar mensagem. Conexão perdida!' + Style.RESET_ALL)
-                    break
+                    continue
+                client_socket.send(message.encode('utf-8'))
         except (ConnectionResetError, BrokenPipeError):
             print(Fore.RED + '\nErro ao enviar mensagem. Conexão encerrada!' + Style.RESET_ALL)
         finally:
             client_socket.close()
+            print(Fore.YELLOW + "Conexão encerrada." + Style.RESET_ALL)
+
+    @staticmethod
+    def check_stdin():
+        if platform.system() == 'Windows':
+            import msvcrt
+            # No Windows, usa msvcrt para verificar se há dados no stdin
+            if msvcrt.kbhit():
+                return sys.stdin.readline().strip()
+            return None
+        # No Linux/macOS, usa select para verificar se há dados no stdin
+        if sys.stdin in select.select([sys.stdin], [], [], 0.1)[0]:
+            return input().strip()
+        return None
 
 
 if __name__ == '__main__':
