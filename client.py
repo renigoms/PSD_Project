@@ -118,10 +118,19 @@ class Client:
                 if not message:
                     print(Fore.RED + 'Mensagem vazia. Digite algo válido.' + Style.RESET_ALL)
                     continue
-                if message == '-sair':  # Cliente pediu para sair
-                    client_socket.send('-sair'.encode('utf-8'))  # Envia comando para o servidor
+                if message == '-sair':
+                    client_socket.send(message.encode('utf-8'))
                     print(Fore.YELLOW + f"{username} solicitou desconexão." + Style.RESET_ALL)
                     break
+                if message.startswith('-criargrupo '):
+                    parts = message.split(' ', 1)  # Divide em 2 partes, o comando e o nome do grupo
+                    if not parts[1].strip():  # Verifica se o nome do grupo está vazio ou só tem espaços
+                        print(Fore.YELLOW
+                              + 'Erro: Nome do grupo não pode estar vazio. Use: -criargrupo <nome_do_grupo>'
+                              + Style.RESET_ALL)
+                        continue
+                    client_socket.send(message.encode('utf-8'))
+                    continue
                 parts = message.split(' ', 3)  # Divide em até 4 partes: comando, "tag", username e mensagem
                 if len(parts) != REQUIRED_MESSAGE_PARTS and message.startswith('-msg'):
                     print(
