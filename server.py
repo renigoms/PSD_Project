@@ -9,8 +9,10 @@ class Server:
     def __init__(self, host, port):
         self.host = host
         self.port = port
-        self.clients = {}
+        self.clients = {}  # Armazena os clientes conectados: {socket: username, ...}
+        self.groups = {}  # Armazena os grupos: {group_name: [socket1, socket2, ...]}
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Reutiliza a porta
 
     def run(self):
         self._start_server()
@@ -65,16 +67,20 @@ class Server:
         return username
 
     def _handle_client_messages(self, client_socket: socket.socket):
-        msg = ''
         username = self.clients.get(client_socket, "Desconhecido")
         try:
             while True:
                 message = client_socket.recv(1024).decode("utf-8").strip()
                 if not message:
                     continue
-                if message == '-sair':  # Cliente pediu para sair
+                if message == '-sair':
                     print(Fore.YELLOW + f"{username} solicitou desconexão." + Style.RESET_ALL)
                     break
+                if message == '-listarusuarios':
+                    self._send_user_list(client_socket)
+                if message.startswith('-criargrupo'):
+                    self._handle_create_group(client_socket, username=username, data_group=message)
+                    continue
                 if message.startswith('-msg') and REQUIRED_MESSAGE_PARTS == len((parts := message.split(' ', 3))):
                     command, tag, recipient_name, msg = parts
                     if command == '-msg' and tag.upper() == 'U':
@@ -84,10 +90,8 @@ class Server:
                         broadcast_message = f"{username}: {message}"
                         print(broadcast_message)
                         self._broadcast(broadcast_message, client_socket)
-                elif message == '-listarusuarios':
-                    self._send_user_list(client_socket)
-                else:
                     continue
+                self._send_error_response(client_socket, "Comando desconhecido ou formato inválido.")
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
             print(Fore.RED + f"Conexão perdida com {username}." + Style.RESET_ALL)
         finally:
@@ -162,6 +166,24 @@ class Server:
             client_socket.send((Fore.CYAN + 'Usuários online:\n' + users + Style.RESET_ALL).encode('utf-8'))
         except (ConnectionResetError, ConnectionAbortedError):
             self._remove_client(client_socket)
+
+    def _handle_create_group(self, client_socket: socket.socket, username, data_group: str):
+        """
+        Cria um novo grupo com o nome fornecido.
+        :param client_socket: Socket do cliente que solicitou a criação do grupo.
+        :param username: Nome do usuário que está criando o grupo.
+        :param data_group: Comando completo enviado pelo cliente (ex: "-criargrupo NOME_DO_GRUPO").
+        """
+        parts = data_group.split(' ', 1)  # Divide o comando em partes: "-criargrupo" e "NOME_DO_GRUPO"
+        if len(parts) != 2 or not (group_name := parts[1].strip()):
+            self._send_error_response(client_socket, f'Formato inválido. Use: -criargrupo NOME_DO_GRUPO')
+            return
+        if group_name in self.groups:
+            self._send_error_response(client_socket, f"Erro: O grupo '{group_name}' já existe.")
+            return
+        self.groups[group_name] = [client_socket]
+        self._send_success_response(client_socket, f"Grupo '{group_name}' criado com sucesso.")
+        print(Fore.GREEN + f"Grupo '{group_name}' criado por {username}." + Style.RESET_ALL)
 
 
 if __name__ == '__main__':
