@@ -30,7 +30,8 @@ class Server:
             while True:
                 client_socket, address = self.server_socket.accept()
                 print(Fore.CYAN + f"Nova conexão de {address}" + Style.RESET_ALL)
-                Thread(target=self._handle_new_client, args=(client_socket, address)).start()
+                Thread(target=self.
+                       _handle_new_client, args=(client_socket, address)).start()
         except KeyboardInterrupt:
             print(Fore.YELLOW + "\nServidor interrompido manualmente. Fechando conexões..." + Style.RESET_ALL)
         finally:

@@ -1,7 +1,7 @@
 import socket
 from colorama import Style, Fore
 from threading import Thread
-from constants import REQUIRED_MESSAGE_PARTS
+from constants import REQUIRED_MESSAGE_PARTS, REQUIRED_NAME_GROUP
 
 
 class Client:
@@ -19,7 +19,7 @@ class Client:
             return
         if not Client._authenticate_user(client_socket, username):
             return
-        Client._start_message_threads(client_socket, username)
+        self._start_message_threads(client_socket, username)
 
     @staticmethod
     def _get_username():
@@ -57,11 +57,10 @@ class Client:
             print(Fore.RED + f'Erro ao enviar o nome de usuário. Encerrando conexão. \n{e}' + Style.RESET_ALL)
             return False
 
-    @staticmethod
-    def _start_message_threads(client_socket: socket.socket, username: str):
+    def _start_message_threads(self, client_socket: socket.socket, username: str):
         try:
             thread_receive = Thread(target=Client._receive_message, args=[client_socket])
-            thread_send = Thread(target=Client._send_messages, args=[client_socket, username])
+            thread_send = Thread(target=self._send_messages, args=[client_socket, username])
 
             thread_receive.start()
             thread_send.start()
@@ -89,8 +88,7 @@ class Client:
                 print(Fore.RED + f'\nErro no socket: {e}' + Style.RESET_ALL)
                 break
 
-    @staticmethod
-    def _send_messages(client_socket: socket.socket, username: str):
+    def _send_messages(self, client_socket: socket.socket, username: str):
         try:
             while True:
                 message = input()
@@ -118,13 +116,6 @@ class Client:
                 except (ConnectionResetError, BrokenPipeError):
                     print(Fore.RED + '\nErro ao enviar mensagem. Conexão perdida!' + Style.RESET_ALL)
                     break
-                # else:
-                #     print(
-                #         Fore.YELLOW
-                #         + 'Formato inválido'
-                #         + Style.RESET_ALL
-                #     )
-                #     break
         except (ConnectionResetError, BrokenPipeError):
             print(Fore.RED + '\nErro ao enviar mensagem. Conexão encerrada!' + Style.RESET_ALL)
         finally:
