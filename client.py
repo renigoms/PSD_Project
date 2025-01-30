@@ -1,6 +1,12 @@
+import platform
+import select
 import socket
-from colorama import Style, Fore
+import sys
+import threading
 from threading import Thread
+
+from colorama import Style, Fore
+
 from constants import REQUIRED_MESSAGE_PARTS
 
 
@@ -9,6 +15,8 @@ class Client:
     def __init__(self, host: str, port: int):
         self.host = host
         self.port = port
+        self.running = threading.Event()
+        self.running.set()
 
     def run(self):
         client_socket = self._connect_to_server()
@@ -19,14 +27,18 @@ class Client:
             return
         if not Client._authenticate_user(client_socket, username):
             return
-        Client._start_message_threads(client_socket, username)
+        self._start_message_threads(client_socket, username)
 
     @staticmethod
     def _get_username():
-        username = input('\nDigite seu nome de usuário: ').strip()
-        if not username:
-            print(Fore.RED + 'Nome de usuário inválido. Encerrando conexão.' + Style.RESET_ALL)
-        return username
+        try:
+            username = input('\nDigite seu nome de usuário: ').strip()
+            if not username:
+                print(Fore.RED + 'Nome de usuário inválido. Encerrando conexão.' + Style.RESET_ALL)
+            return username
+        except KeyboardInterrupt:
+            print(Fore.YELLOW + '\nEntrada cancelada pelo usuário. Encerrando conexão...' + Style.RESET_ALL)
+            return None
 
     def _connect_to_server(self) -> socket.socket | None:
         client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -57,11 +69,10 @@ class Client:
             print(Fore.RED + f'Erro ao enviar o nome de usuário. Encerrando conexão. \n{e}' + Style.RESET_ALL)
             return False
 
-    @staticmethod
-    def _start_message_threads(client_socket: socket.socket, username: str):
+    def _start_message_threads(self, client_socket: socket.socket, username: str):
         try:
             thread_receive = Thread(target=Client._receive_message, args=[client_socket])
-            thread_send = Thread(target=Client._send_messages, args=[client_socket, username])
+            thread_send = Thread(target=self._send_messages, args=[client_socket, username])
 
             thread_receive.start()
             thread_send.start()
@@ -70,7 +81,15 @@ class Client:
             thread_receive.join()
             thread_send.join()
         except KeyboardInterrupt:
-            print(Fore.YELLOW + '\nConexão interrompida manualmente. Encerrando...' + Style.RESET_ALL)
+            self.running.clear()  # Desativa a flag, indicando que o programa está encerrando
+            print(Fore.YELLOW + '\nEncerrando conexão...' + Style.RESET_ALL)
+            try:
+                client_socket.send('-sair'.encode('utf-8'))  # Envia comando de saída ao servidor
+            except (BrokenPipeError, OSError):
+                pass  # Se a conexão já estiver encerrada, não faz nada
+            finally:
+                client_socket.close()
+                print(Fore.YELLOW + '\nConexão interrompida manualmente. Encerrando...' + Style.RESET_ALL)
 
     @staticmethod
     def _receive_message(client_socket: socket.socket):
@@ -89,14 +108,20 @@ class Client:
                 print(Fore.RED + f'\nErro no socket: {e}' + Style.RESET_ALL)
                 break
 
-    @staticmethod
-    def _send_messages(client_socket: socket.socket, username: str):
+    def _send_messages(self, client_socket: socket.socket, username: str):
         try:
-            while True:
-                message = input()
-                if not message.strip():
+            while self.running.is_set():
+                # Usa select para verificar se há entrada disponível no stdin
+                message = Client.check_stdin()
+                if message is None:
+                    continue
+                if not message:
                     print(Fore.RED + 'Mensagem vazia. Digite algo válido.' + Style.RESET_ALL)
                     continue
+                if message == '-sair':  # Cliente pediu para sair
+                    client_socket.send('-sair'.encode('utf-8'))  # Envia comando para o servidor
+                    print(Fore.YELLOW + f"{username} solicitou desconexão." + Style.RESET_ALL)
+                    break
                 parts = message.split(' ', 3)  # Divide em até 4 partes: comando, "tag", username e mensagem
                 if len(parts) != REQUIRED_MESSAGE_PARTS and message.startswith('-msg'):
                     print(
@@ -107,28 +132,27 @@ class Client:
                     )
                     continue
                 if message.startswith('-msg') and parts[1].upper() == 'U':
-                    try:
-                        client_socket.send(message.encode('utf-8'))
-                    except (ConnectionResetError, BrokenPipeError):
-                        print(Fore.RED + '\nErro ao enviar mensagem. Conexão perdida!' + Style.RESET_ALL)
-                        break
-                    continue
-                try:
                     client_socket.send(message.encode('utf-8'))
-                except (ConnectionResetError, BrokenPipeError):
-                    print(Fore.RED + '\nErro ao enviar mensagem. Conexão perdida!' + Style.RESET_ALL)
-                    break
-                # else:
-                #     print(
-                #         Fore.YELLOW
-                #         + 'Formato inválido'
-                #         + Style.RESET_ALL
-                #     )
-                #     break
+                    continue
+                client_socket.send(message.encode('utf-8'))
         except (ConnectionResetError, BrokenPipeError):
             print(Fore.RED + '\nErro ao enviar mensagem. Conexão encerrada!' + Style.RESET_ALL)
         finally:
             client_socket.close()
+            print(Fore.YELLOW + "Conexão encerrada." + Style.RESET_ALL)
+
+    @staticmethod
+    def check_stdin():
+        if platform.system() == 'Windows':
+            import msvcrt
+            # No Windows, usa msvcrt para verificar se há dados no stdin
+            if msvcrt.kbhit():
+                return sys.stdin.readline().strip()
+            return None
+        # No Linux/macOS, usa select para verificar se há dados no stdin
+        if sys.stdin in select.select([sys.stdin], [], [], 0.1)[0]:
+            return input().strip()
+        return None
 
 
 if __name__ == '__main__':
