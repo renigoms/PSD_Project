@@ -72,6 +72,9 @@ class Server:
                 message = client_socket.recv(1024).decode("utf-8").strip()
                 if not message:
                     continue
+                if message == '-sair':  # Cliente pediu para sair
+                    print(Fore.YELLOW + f"{username} solicitou desconexão." + Style.RESET_ALL)
+                    break
                 if message.startswith('-msg') and REQUIRED_MESSAGE_PARTS == len((parts := message.split(' ', 3))):
                     command, tag, recipient_name, msg = parts
                     if command == '-msg' and tag.upper() == 'U':
