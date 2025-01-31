@@ -120,6 +120,9 @@ class Server:
             case "-criargrupo":
                 self._handle_create_group(client_socket, username=username, data_group=message)
                 return self._handle_client_messages(client_socket=client_socket)
+            case "-entrargrupo":
+                self._handle_enter_group(client_socket=client_socket, username=username, data_group=message)
+                return self._handle_client_messages(client_socket=client_socket)
         return
     def _handle_private_message(self, recipient_name: str, sender_username: str,
                                 sender_socket: socket.socket, message: str):
@@ -193,7 +196,28 @@ class Server:
                   + Style.RESET_ALL)
         except (ConnectionResetError, ConnectionAbortedError):
             self._remove_client(client_socket)
-
+            
+    def _handle_enter_group(self, client_socket: socket.socket, username, data_group: str):
+        """
+        Adiciona o usuário ao grupo com o nome fornecido.
+        :param client_socket: Socket do cliente que solicitou a criação do grupo.
+        :param username: Nome do usuário que está criando o grupo.
+        :param data_group: Comando completo enviado pelo cliente (ex: "-entrargrupo NOME_DO_GRUPO").
+        """
+        parts = data_group.split(' ', 1)
+        if len(parts) != 2 or not (group_name := parts[1].strip()):
+            self._send_error_response(client_socket, f'Formato inválido. Use: -entrargrupo NOME_DO_GRUPO')
+            return
+        if group_name in self.groups:
+            if client_socket in self.groups[group_name]:
+                self._send_error_response(client_socket, f"Erro: O usuário '{username}' já participa do grupo {group_name}.")
+                return
+            self.groups[group_name].append(client_socket)
+            self._send_success_response(client_socket, f"Usuário '{username}' adicionado ao grupo {group_name} com sucesso.")
+            return
+        self._send_error_response(client_socket, f"Erro: O grupo '{group_name}' não existe.")
+        return
+    
     def _handle_create_group(self, client_socket: socket.socket, username, data_group: str):
         """
         Cria um novo grupo com o nome fornecido.
