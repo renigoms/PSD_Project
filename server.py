@@ -78,6 +78,10 @@ class Server:
                     break
                 if message == '-listarusuarios':
                     self._send_user_list(client_socket)
+                    continue
+                if message == '-listargrupos':
+                    self._send_group_list(client_socket)
+                    continue
                 if message.startswith('-criargrupo'):
                     self._handle_create_group(client_socket, username=username, data_group=message)
                     continue
@@ -143,12 +147,12 @@ class Server:
     @staticmethod
     def _send_success_response(client_socket: socket.socket, message: str):
         header = 'OK'.ljust(10)
-        client_socket.send((header + message).encode('utf-8'))
+        client_socket.send((header + f'\n{message}').encode('utf-8'))
 
     @staticmethod
     def _send_error_response(client_socket: socket.socket, mensagem: str):
         header = 'ERROR'.ljust(10)
-        client_socket.send((header + mensagem).encode('utf-8'))
+        client_socket.send((header + f'\n{mensagem}').encode('utf-8'))
 
     @staticmethod
     def send_message_safe(client_socket: socket.socket, message):
@@ -163,7 +167,10 @@ class Server:
         """Envia a lista de todos os usuários conectados para o cliente"""
         users = '\n'.join(self.clients.values())
         try:
-            client_socket.send((Fore.CYAN + 'Usuários online:\n' + users + Style.RESET_ALL).encode('utf-8'))
+            self._send_success_response(client_socket, f'Usuários online:\n{users}')
+            print(Fore.CYAN
+                  + f'Lista de usuários enviada para {self.clients.get(client_socket, "Desconhecido")}'
+                  + Style.RESET_ALL)
         except (ConnectionResetError, ConnectionAbortedError):
             self._remove_client(client_socket)
 
@@ -184,6 +191,21 @@ class Server:
         self.groups[group_name] = [client_socket]
         self._send_success_response(client_socket, f"Grupo '{group_name}' criado com sucesso.")
         print(Fore.GREEN + f"Grupo '{group_name}' criado por {username}." + Style.RESET_ALL)
+
+    def _send_group_list(self, client_socket: socket.socket):
+        """"Envia a lista de grupos para o cliente"""
+        if not self.groups:
+            self._send_error_response(client_socket, 'Nenhum grupo cadastrado')
+            return
+        print(self.groups)
+        groups = '\n'.join(self.groups.keys())
+        try:
+            self._send_success_response(client_socket, f'Grupos:\n{groups}')
+            print(Fore.CYAN
+                  + f"Lista de grupos enviada para {self.clients.get(client_socket, 'Desconhecido')}."
+                  + Style.RESET_ALL)
+        except (ConnectionResetError, ConnectionAbortedError):
+            self._remove_client(client_socket)
 
 
 if __name__ == '__main__':
