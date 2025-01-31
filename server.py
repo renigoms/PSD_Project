@@ -10,9 +10,11 @@ class Server:
         self.host = host
         self.port = port
         self.clients = {}  # Armazena os clientes conectados: {socket: username, ...}
-        self.groups = {}  # Armazena os grupos: {group_name: [socket1, socket2, ...]}
+        # Armazena os grupos: {group_name: [socket1, socket2, ...]}
+        self.groups = {}
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Reutiliza a porta
+        self.server_socket.setsockopt(
+            socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Reutiliza a porta
 
     def run(self):
         self._start_server()
@@ -22,20 +24,24 @@ class Server:
         try:
             self.server_socket.bind((self.host, self.port))
             self.server_socket.listen()
-            print(Fore.GREEN + f"Servidor iniciado em {self.host}:{self.port}" + Style.RESET_ALL)
+            print(
+                Fore.GREEN + f"Servidor iniciado em {self.host}:{self.port}" + Style.RESET_ALL)
         except OSError as e:
-            print(Fore.RED + f"\nErro ao iniciar o servidor: {e}" + Style.RESET_ALL)
+            print(
+                Fore.RED + f"\nErro ao iniciar o servidor: {e}" + Style.RESET_ALL)
             return
 
     def _accept_connections(self):
         try:
             while True:
                 client_socket, address = self.server_socket.accept()
-                print(Fore.CYAN + f"Nova conexão de {address}" + Style.RESET_ALL)
+                print(Fore.CYAN +
+                      f"Nova conexão de {address}" + Style.RESET_ALL)
                 Thread(target=self.
                        _handle_new_client, args=(client_socket, address)).start()
         except KeyboardInterrupt:
-            print(Fore.YELLOW + "\nServidor interrompido manualmente. Fechando conexões..." + Style.RESET_ALL)
+            print(
+                Fore.YELLOW + "\nServidor interrompido manualmente. Fechando conexões..." + Style.RESET_ALL)
         finally:
             self._shutdown()
 
@@ -44,9 +50,11 @@ class Server:
             username = self._receive_username(client_socket)
             if not username:
                 return
-            Server._send_success_response(client_socket, 'Conexão estabelecida com sucesso!')
+            Server._send_success_response(
+                client_socket, 'Conexão estabelecida com sucesso!')
             self.clients[client_socket] = username
-            print(Fore.BLUE + f"{username} ({address}) conectou-se ao servidor." + Style.RESET_ALL)
+            print(
+                Fore.BLUE + f"{username} ({address}) conectou-se ao servidor." + Style.RESET_ALL)
 
             # Mensagem de boas-vindas
             self._broadcast(f"{username} entrou no chat.", client_socket)
@@ -54,7 +62,8 @@ class Server:
             # Começa a tratar mensagens desse cliente
             self._handle_client_messages(client_socket)
         except Exception as e:
-            print(Fore.RED + f"Erro ao lidar com o cliente {address}: {e}" + Style.RESET_ALL)
+            print(
+                Fore.RED + f"Erro ao lidar com o cliente {address}: {e}" + Style.RESET_ALL)
 
     def _receive_username(self, client_socket: socket.socket) -> str:
         username = client_socket.recv(1024).decode('utf-8').capitalize()
@@ -66,42 +75,52 @@ class Server:
             client_socket.close()
             return ''
         return username
-    
+
     def _handle_client_messages(self, client_socket: socket.socket):
         username = self.clients.get(client_socket, "Desconhecido")
         try:
-            while True:
-                message = client_socket.recv(1024).decode("utf-8").strip()
-                if not message:
-                    continue
-                if message == '-sair':
-                    print(Fore.YELLOW + f"{username} solicitou desconexão." + Style.RESET_ALL)
-                    break
-                if message == '-listarusuarios':
-                    self._send_user_list(client_socket)
-                    continue
-                if message == '-listargrupos':
-                    self._send_group_list(client_socket)
-                    continue
-                if message.startswith('-criargrupo'):
-                    self._handle_create_group(client_socket, username=username, data_group=message)
-                    continue
-                if message.startswith('-msg') and REQUIRED_MESSAGE_PARTS == len((parts := message.split(' ', 3))):
-                    command, tag, recipient_name, msg = parts
-                    if command == '-msg' and tag.upper() == 'U':
-                        self._handle_private_message(recipient_name, sender_username=username,
-                                                     sender_socket=client_socket, message=msg)
-                    else:
-                        broadcast_message = f"{username}: {message}"
-                        print(broadcast_message)
-                        self._broadcast(broadcast_message, client_socket)
-                    continue
-                self._send_error_response(client_socket, "Comando desconhecido ou formato inválido.")
+             message = client_socket.recv(1024).decode("utf-8").strip()
+             if not message:
+                 return self._handle_client_messages(client_socket=client_socket)
+             
+             match message:
+                 case '-sair':
+                     print(Fore.YELLOW + f"{username} solicitou desconexão." + Style.RESET_ALL)
+                     return
+                 case '-listarusuarios':
+                     self._send_user_list(client_socket)
+                     return self._handle_client_messages(client_socket=client_socket)
+                 case '-listargrupos':
+                     self._send_group_list(client_socket)
+                     return self._handle_client_messages(client_socket=client_socket)
+                 
+             self._handle_command_group(message=message, username=username, client_socket=client_socket)
+             
+             if message.startswith('-msg') and REQUIRED_MESSAGE_PARTS == len((parts := message.split(' ', 3))):
+                 command, tag, recipient_name, msg = parts
+                 if command == '-msg' and tag.upper() == 'U':
+                     self._handle_private_message(recipient_name, sender_username=username, sender_socket=client_socket, message=msg)
+                 else:
+                     broadcast_message = f"{username}: {message}"
+                     print(broadcast_message)
+                     self._broadcast(broadcast_message, client_socket)
+                 return self._handle_client_messages(client_socket=client_socket)
+                 
+             self._send_error_response(client_socket, "Comando desconhecido ou formato inválido.")
+             return self._handle_client_messages(client_socket=client_socket)
+         
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
             print(Fore.RED + f"Conexão perdida com {username}." + Style.RESET_ALL)
         finally:
             self._remove_client(client_socket)
-
+    
+    def _handle_command_group(self, message:str, username, client_socket):
+        parts = message.split(' ', 1)
+        match parts[0]:
+            case "-criargrupo":
+                self._handle_create_group(client_socket, username=username, data_group=message)
+                return self._handle_client_messages(client_socket=client_socket)
+        return
     def _handle_private_message(self, recipient_name: str, sender_username: str,
                                 sender_socket: socket.socket, message: str):
         formatted_message = f'({sender_username}, {datetime.now().strftime("%d/%m/%Y %H:%M:%S")}): {message}'
@@ -174,11 +193,6 @@ class Server:
                   + Style.RESET_ALL)
         except (ConnectionResetError, ConnectionAbortedError):
             self._remove_client(client_socket)
-    
-    def _send_group_list(self, client_socket:socket.socket):
-        """Envia uma lista dos grupos criados para o usuário"""
-        
-        pass
 
     def _handle_create_group(self, client_socket: socket.socket, username, data_group: str):
         """
