@@ -120,6 +120,9 @@ class Client:
                     client_socket.send(message.encode('utf-8'))
                     print(Fore.YELLOW + f"{username} solicitou desconexão." + Style.RESET_ALL)
                     break
+                if message == '-listargrupos':
+                    client_socket.send(message.encode('utf-8'))
+                    continue
                 if message.startswith('-criargrupo '):
                     parts = message.split(' ', 1)  # Divide em 2 partes, o comando e o nome do grupo
                     if not parts[1].strip():  # Verifica se o nome do grupo está vazio ou só tem espaços
