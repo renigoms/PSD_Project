@@ -4,10 +4,8 @@ import socket
 import sys
 import threading
 from threading import Thread
-
-from colorama import Style, Fore
-
 from constants import REQUIRED_MESSAGE_PARTS
+from colorama import Style, Fore
 
 
 class Client:
@@ -168,5 +166,5 @@ class Client:
 
 
 if __name__ == '__main__':
-    client = Client('localhost', 50000)
+    client = Client('localhost', 50001)
     client.run()

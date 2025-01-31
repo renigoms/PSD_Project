@@ -32,7 +32,8 @@ class Server:
             while True:
                 client_socket, address = self.server_socket.accept()
                 print(Fore.CYAN + f"Nova conexão de {address}" + Style.RESET_ALL)
-                Thread(target=self._handle_new_client, args=(client_socket, address)).start()
+                Thread(target=self.
+                       _handle_new_client, args=(client_socket, address)).start()
         except KeyboardInterrupt:
             print(Fore.YELLOW + "\nServidor interrompido manualmente. Fechando conexões..." + Style.RESET_ALL)
         finally:
@@ -65,7 +66,7 @@ class Server:
             client_socket.close()
             return ''
         return username
-
+    
     def _handle_client_messages(self, client_socket: socket.socket):
         username = self.clients.get(client_socket, "Desconhecido")
         try:
@@ -173,6 +174,11 @@ class Server:
                   + Style.RESET_ALL)
         except (ConnectionResetError, ConnectionAbortedError):
             self._remove_client(client_socket)
+    
+    def _send_group_list(self, client_socket:socket.socket):
+        """Envia uma lista dos grupos criados para o usuário"""
+        
+        pass
 
     def _handle_create_group(self, client_socket: socket.socket, username, data_group: str):
         """
