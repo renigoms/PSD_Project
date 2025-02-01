@@ -4,8 +4,8 @@ import socket
 import sys
 import threading
 from threading import Thread
-from constants import REQUIRED_MESSAGE_PARTS
 from colorama import Style, Fore
+from utils import extract_command_parts
 
 
 class Client:
@@ -141,8 +141,9 @@ class Client:
                         continue
                     client_socket.send(message.encode('utf-8'))
                     continue
-                parts = message.split(' ', 3)  # Divide em até 4 partes: comando, "tag", username e mensagem
-                if len(parts) != REQUIRED_MESSAGE_PARTS and message.startswith('-msg'):
+                # Divide em até 4 partes: comando, "tag", username e mensagem
+                parts = extract_command_parts(message, 4)
+                if message.startswith('-msg') and not parts:
                     print(
                         Fore.YELLOW
                         + 'Formato inválido para mensagem. Use: -msg tag <usuário|grupo> <mensagem>'
@@ -150,7 +151,7 @@ class Client:
                         + Style.RESET_ALL
                     )
                     continue
-                if message.startswith('-msg') and parts[1].upper() == 'U':
+                if message.startswith('-msg') and parts[1].upper() == ('U' or 'G'):
                     client_socket.send(message.encode('utf-8'))
                     continue
                 client_socket.send(message.encode('utf-8'))
