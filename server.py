@@ -79,51 +79,57 @@ class Server:
     def _handle_client_messages(self, client_socket: socket.socket):
         username = self.clients.get(client_socket, "Desconhecido")
         try:
-             message = client_socket.recv(1024).decode("utf-8").strip()
-             if not message:
-                 return self._handle_client_messages(client_socket=client_socket)
-             
-             match message:
-                 case '-sair':
-                     print(Fore.YELLOW + f"{username} solicitou desconexão." + Style.RESET_ALL)
-                     return
-                 case '-listarusuarios':
-                     self._send_user_list(client_socket)
-                     return self._handle_client_messages(client_socket=client_socket)
-                 case '-listargrupos':
-                     self._send_group_list(client_socket)
-                     return self._handle_client_messages(client_socket=client_socket)
-                 
-             self._handle_command_group(message=message, username=username, client_socket=client_socket)
-             
-             if message.startswith('-msg') and REQUIRED_MESSAGE_PARTS == len((parts := message.split(' ', 3))):
-                 command, tag, recipient_name, msg = parts
-                 if command == '-msg' and tag.upper() == 'U':
-                     self._handle_private_message(recipient_name, sender_username=username, sender_socket=client_socket, message=msg)
-                 else:
-                     broadcast_message = f"{username}: {message}"
-                     print(broadcast_message)
-                     self._broadcast(broadcast_message, client_socket)
-                 return self._handle_client_messages(client_socket=client_socket)
-                 
-             self._send_error_response(client_socket, "Comando desconhecido ou formato inválido.")
-             return self._handle_client_messages(client_socket=client_socket)
-         
+            while True:
+                message = client_socket.recv(1024).decode("utf-8").strip()
+                if not message:
+                    continue
+                match message:
+                    case '-sair':
+                        print(Fore.YELLOW + f"{username} solicitou desconexão." + Style.RESET_ALL)
+                        break
+                    case '-listarusuarios':
+                        self._send_user_list(client_socket)
+                        continue
+                if 'grupo' in message:
+                    self._handle_command_group(message=message, username=username, client_socket=client_socket)
+                    continue
+                if message.startswith('-msg') and REQUIRED_MESSAGE_PARTS == len((parts := message.split(' ', 3))):
+                    command, tag, recipient_name, msg = parts
+                    if command == '-msg' and tag.upper() == 'U':
+                        self._handle_private_message(recipient_name, sender_username=username, sender_socket=client_socket,
+                                                     message=msg)
+                    else:
+                        broadcast_message = f"{username}: {message}"
+                        print(broadcast_message)
+                        self._broadcast(broadcast_message, client_socket)
+                    continue
+                self._send_error_response(client_socket, "Comando desconhecido ou formato inválido.")
+                continue
         except (ConnectionResetError, ConnectionAbortedError, BrokenPipeError):
             print(Fore.RED + f"Conexão perdida com {username}." + Style.RESET_ALL)
+        except Exception as e:
+            print(Fore.RED + f"Erro inesperado com {username}: {e}" + Style.RESET_ALL)
+            self._send_error_response(client_socket, "Erro interno no servidor.")
         finally:
             self._remove_client(client_socket)
-    
-    def _handle_command_group(self, message:str, username, client_socket):
-        parts = message.split(' ', 1)
-        match parts[0]:
-            case "-criargrupo":
-                self._handle_create_group(client_socket, username=username, data_group=message)
-                return self._handle_client_messages(client_socket=client_socket)
-            case "-entrargrupo":
-                self._handle_enter_group(client_socket=client_socket, username=username, data_group=message)
-                return self._handle_client_messages(client_socket=client_socket)
-        return
+
+    def _handle_command_group(self, message: str, username, client_socket):
+        try:
+            parts = message.split(' ', 1)
+            match parts[0]:
+                case '-criargrupo':
+                    self._handle_create_group(client_socket, username=username, data_group=message)
+                case '-entrargrupo':
+                    self._handle_enter_group(client_socket=client_socket, username=username, data_group=message)
+                case '-listargrupos':
+                    self._send_group_list(client_socket)
+                case _:
+                    # Comando desconhecido
+                    self._send_error_response(client_socket, 'Comando de grupo desconhecido.')
+        except Exception as e:
+            print(Fore.RED + f"Erro ao processar comando de grupo: {e}" + Style.RESET_ALL)
+            self._send_error_response(client_socket, "Erro interno ao processar o comando.")
+
     def _handle_private_message(self, recipient_name: str, sender_username: str,
                                 sender_socket: socket.socket, message: str):
         formatted_message = f'({sender_username}, {datetime.now().strftime("%d/%m/%Y %H:%M:%S")}): {message}'
@@ -196,7 +202,7 @@ class Server:
                   + Style.RESET_ALL)
         except (ConnectionResetError, ConnectionAbortedError):
             self._remove_client(client_socket)
-            
+
     def _handle_enter_group(self, client_socket: socket.socket, username, data_group: str):
         """
         Adiciona o usuário ao grupo com o nome fornecido.
@@ -210,14 +216,22 @@ class Server:
             return
         if group_name in self.groups:
             if client_socket in self.groups[group_name]:
-                self._send_error_response(client_socket, f"Erro: O usuário '{username}' já participa do grupo {group_name}.")
+                self._send_error_response(client_socket,
+                                          f"Erro: O usuário '{username}' já participa do grupo {group_name}.")
                 return
             self.groups[group_name].append(client_socket)
-            self._send_success_response(client_socket, f"Usuário '{username}' adicionado ao grupo {group_name} com sucesso.")
+            self._send_success_response(client_socket,
+                                        f"Você('{username}') entrou no grupo {group_name}.")
+            print(
+                Fore.YELLOW
+                + f'Usuário "{username}" adicionado ao grupo {group_name} com sucesso.'
+                + Style.RESET_ALL
+            )
+
             return
         self._send_error_response(client_socket, f"Erro: O grupo '{group_name}' não existe.")
         return
-    
+
     def _handle_create_group(self, client_socket: socket.socket, username, data_group: str):
         """
         Cria um novo grupo com o nome fornecido.
