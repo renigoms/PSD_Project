@@ -132,6 +132,15 @@ class Client:
                         continue
                     client_socket.send(message.encode('utf-8'))
                     continue
+                if message.startswith('-entrargrupo'):
+                    parts = message.split(' ', 1)  # Divide em 2 partes, o comando e o nome do grupo
+                    if not parts[1].strip():  # Verifica se o nome do grupo está vazio ou só tem espaços
+                        print(Fore.YELLOW
+                              + 'Erro: Nome do grupo não pode estar vazio. Use: -entrargrupo <nome_do_grupo>'
+                              + Style.RESET_ALL)
+                        continue
+                    client_socket.send(message.encode('utf-8'))
+                    continue
                 parts = message.split(' ', 3)  # Divide em até 4 partes: comando, "tag", username e mensagem
                 if len(parts) != REQUIRED_MESSAGE_PARTS and message.startswith('-msg'):
                     print(

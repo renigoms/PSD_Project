@@ -126,6 +126,8 @@ class Server:
                     self._send_group_list(client_socket)
                 case '-listarusrgrupo':
                     self._handler_list_users_group(client_socket=client_socket, username=username, data_grupo=message)
+                case '-sairgrupo':
+                    self._handle_exit_group(client_socket=client_socket, username=username, data_group=message)
                 case _:
                     # Comando desconhecido
                     self._send_error_response(client_socket, 'Comando de grupo desconhecido.')
@@ -205,6 +207,30 @@ class Server:
                   + Style.RESET_ALL)
         except (ConnectionResetError, ConnectionAbortedError):
             self._remove_client(client_socket)
+    
+    def _handle_exit_group(self, client_socket: socket.socket, username, data_group: str):
+        """
+                Remove o usuário do grupo com o nome fornecido.
+                :param client_socket: Socket do cliente que solicitou a criação do grupo.
+                :param username: Nome do usuário que está criando o grupo.
+                :param data_group: Comando completo enviado pelo cliente (ex: "-entrargrupo NOME_DO_GRUPO").
+                """
+        # Divide o comando em partes: "-entrargrupo" e "NOME_DO_GRUPO"
+        parts = self._extract_command_parts(data_group, expected_parts=2)
+        if not parts:
+            self._send_error_response(client_socket, 'Formato inválido. Use: -sairgrupo NOME_DO_GRUPO')
+            return
+        _, group_name = parts
+        if group_name in self.groups:
+            if username in self.groups[group_name]:
+                self.groups[group_name].remove(username)
+                self._send_success_response(client_socket,
+                                            f"Você('{username}') não faz mais parte do grupo {group_name}.")
+                return
+            self._send_error_response(client_socket, f"Erro: O usuário '{username}' não faz parte desse grupo.")
+            return
+        self._send_error_response(client_socket, f"Erro: O grupo '{group_name}' não existe.")
+        return
 
     def _handle_enter_group(self, client_socket: socket.socket, username, data_group: str):
         """
@@ -216,11 +242,11 @@ class Server:
         # Divide o comando em partes: "-entrargrupo" e "NOME_DO_GRUPO"
         parts = self._extract_command_parts(data_group, expected_parts=2)
         if not parts:
-            self._send_error_response(client_socket, 'Formato inválido. Use: -criargrupo NOME_DO_GRUPO')
+            self._send_error_response(client_socket, 'Formato inválido. Use: -entrargrupo NOME_DO_GRUPO')
             return
         _, group_name = parts
         if group_name in self.groups:
-            if client_socket in self.groups[group_name]:
+            if username in self.groups[group_name]:
                 self._send_error_response(client_socket,
                                           f"Erro: O usuário '{username}' já participa do grupo {group_name}.")
                 return
