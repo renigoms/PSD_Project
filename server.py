@@ -1,8 +1,9 @@
 import socket
-from threading import Thread
-from colorama import Fore, Style
-from constants import REQUIRED_MESSAGE_PARTS
 from datetime import datetime
+from threading import Thread
+
+from colorama import Fore, Style
+from utils import extract_command_parts
 
 
 class Server:
@@ -93,16 +94,8 @@ class Server:
                 if 'grupo' in message:
                     self._handle_command_group(message=message, username=username, client_socket=client_socket)
                     continue
-                if message.startswith('-msg') and REQUIRED_MESSAGE_PARTS == len((parts := message.split(' ', 3))):
-                    command, tag, recipient_name, msg = parts
-                    if command == '-msg' and tag.upper() == 'U':
-                        self._handle_private_message(recipient_name, sender_username=username,
-                                                     sender_socket=client_socket,
-                                                     message=msg)
-                    else:
-                        broadcast_message = f"{username}: {message}"
-                        print(broadcast_message)
-                        self._broadcast(broadcast_message, client_socket)
+                if '-msg' in message:
+                    self._handle_command_message(message, username, client_socket)
                     continue
                 self._send_error_response(client_socket, "Comando desconhecido ou formato inválido.")
                 continue
@@ -143,7 +136,7 @@ class Server:
 
     def _send_private_message(self, sender_name: str, recipient_name: str, sender_socket: socket.socket, message: str):
         for client_socket, client_name in self.clients.items():
-            if client_name == recipient_name.capitalize():
+            if client_name == (recipient_name := recipient_name.capitalize()):
                 try:
                     Server.send_message_safe(client_socket, message)
                     print(
@@ -207,7 +200,7 @@ class Server:
                   + Style.RESET_ALL)
         except (ConnectionResetError, ConnectionAbortedError):
             self._remove_client(client_socket)
-    
+
     def _handle_exit_group(self, client_socket: socket.socket, username, data_group: str):
         """
                 Remove o usuário do grupo com o nome fornecido.
@@ -216,7 +209,7 @@ class Server:
                 :param data_group: Comando completo enviado pelo cliente (ex: "-entrargrupo NOME_DO_GRUPO").
                 """
         # Divide o comando em partes: "-entrargrupo" e "NOME_DO_GRUPO"
-        parts = self._extract_command_parts(data_group, expected_parts=2)
+        parts = extract_command_parts(data_group, expected_parts=2)
         if not parts:
             self._send_error_response(client_socket, 'Formato inválido. Use: -sairgrupo NOME_DO_GRUPO')
             return
@@ -240,7 +233,7 @@ class Server:
         :param data_group: Comando completo enviado pelo cliente (ex: "-entrargrupo NOME_DO_GRUPO").
         """
         # Divide o comando em partes: "-entrargrupo" e "NOME_DO_GRUPO"
-        parts = self._extract_command_parts(data_group, expected_parts=2)
+        parts = extract_command_parts(data_group, expected_parts=2)
         if not parts:
             self._send_error_response(client_socket, 'Formato inválido. Use: -entrargrupo NOME_DO_GRUPO')
             return
@@ -270,7 +263,7 @@ class Server:
         :param data_group: Comando completo enviado pelo cliente (ex: "-criargrupo NOME_DO_GRUPO").
         """
         # Divide o comando em partes: "-criargrupo" e "NOME_DO_GRUPO"
-        parts = self._extract_command_parts(data_group, expected_parts=2)
+        parts = extract_command_parts(data_group, expected_parts=2)
         if not parts:
             self._send_error_response(client_socket, 'Formato inválido. Use: -criargrupo NOME_DO_GRUPO')
             return
@@ -299,7 +292,7 @@ class Server:
 
     def _handler_list_users_group(self, client_socket: socket.socket, username: str, data_grupo: str):
 
-        parts = self._extract_command_parts(data_grupo, 2)
+        parts = extract_command_parts(data_grupo, 2)
         if not parts:
             self._send_error_response(client_socket, 'Formato inválido. Use: -listarusrgrupo NOME_DO_GRUPO')
             return
@@ -317,25 +310,34 @@ class Server:
               + f"Lista de usuários do grupo {group_name} enviada para {username}."
               + Style.RESET_ALL)
 
-    @staticmethod
-    def _extract_command_parts(command: str, expected_parts: int) -> list[str] | None:
-        """
-        Divide o comando em partes e valida o formato.
+    def _handle_command_message(self, message: str, username: str, client_socket: socket.socket):
+        if message.startswith('-msg') and (parts := extract_command_parts(message, 4)):
+            command, tag, recipient_name, msg = parts
+            if command == '-msg':
+                if (tag := tag.upper()) not in ('U', 'G'):
+                    self._send_error_response(client_socket, "Tag inválida. Use U (usuário) ou G (grupo).")
+                    return
+                if tag == 'U':
+                    self._handle_private_message(recipient_name, sender_username=username,
+                                                 sender_socket=client_socket, message=msg)
+                    return
+                self._handle_group_message(group_name=recipient_name, sender_username=username,
+                                           sender_socket=client_socket, message=msg)
 
-        Args:
-            command (str): O comando completo enviado pelo cliente.
-            expected_parts (int): O número esperado de partes no comando.
-
-        Returns:
-            list[str] | None: Uma lista com as partes do comando ou None se o formato for inválido.
-            :param command:
-            :param expected_parts:
-            :return:
-        """
-        parts = command.split(' ', expected_parts - 1)
-        if len(parts) != expected_parts or not all(part.strip() for part in parts):
-            return None
-        return parts
+    def _handle_group_message(self, group_name: str, sender_username: str, sender_socket: socket.socket, message: str):
+        if group_name not in self.groups:
+            self._send_error_response(sender_socket, f"Erro: O grupo '{group_name}' não existe.")
+            return
+        formatted_message = (f'({sender_username}, {group_name}, {datetime.now().strftime("%d/%m/%Y - %H:%M:%S")}): '
+                             f'{message}')
+        for member in self.groups[group_name]:
+            for client_socket, username in self.clients.items():
+                if member == username and client_socket != sender_socket:  # Não envia para o próprio remetente
+                    try:
+                        self.send_message_safe(client_socket, formatted_message)
+                    except (ConnectionResetError, ConnectionAbortedError):
+                        self._remove_client(client_socket)
+        print(Fore.YELLOW + f"Mensagem enviada para o grupo '{group_name}' por {sender_username}." + Style.RESET_ALL)
 
 
 if __name__ == '__main__':
