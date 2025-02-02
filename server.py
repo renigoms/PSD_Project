@@ -94,8 +94,8 @@ class Server:
                 if 'grupo' in message:
                     self._handle_command_group(message=message, username=username, client_socket=client_socket)
                     continue
-                if '-msg' in message:
-                    self._handle_command_message(message, username, client_socket)
+                if message.startswith('-msg') and (parts := extract_command_parts(message, 4)):
+                    self._handle_command_message(message, username, client_socket, parts)
                     continue
                 self._send_error_response(client_socket, "Comando desconhecido ou formato inválido.")
                 continue
@@ -310,23 +310,25 @@ class Server:
               + f"Lista de usuários do grupo {group_name} enviada para {username}."
               + Style.RESET_ALL)
 
-    def _handle_command_message(self, message: str, username: str, client_socket: socket.socket):
-        if message.startswith('-msg') and (parts := extract_command_parts(message, 4)):
-            command, tag, recipient_name, msg = parts
-            if command == '-msg':
-                if (tag := tag.upper()) not in ('U', 'G'):
-                    self._send_error_response(client_socket, "Tag inválida. Use U (usuário) ou G (grupo).")
-                    return
-                if tag == 'U':
-                    self._handle_private_message(recipient_name, sender_username=username,
-                                                 sender_socket=client_socket, message=msg)
-                    return
-                self._handle_group_message(group_name=recipient_name, sender_username=username,
-                                           sender_socket=client_socket, message=msg)
+    def _handle_command_message(self, message: str, username: str, client_socket: socket.socket, parts):
+        command, tag, recipient_name, msg = parts
+        if command == '-msg':
+            if (tag := tag.upper()) not in ('U', 'G'):
+                self._send_error_response(client_socket, "Tag inválida. Use U (usuário) ou G (grupo).")
+                return
+            if tag == 'U':
+                self._handle_private_message(recipient_name, sender_username=username,
+                                                sender_socket=client_socket, message=msg)
+                return
+            self._handle_group_message(group_name=recipient_name, sender_username=username,
+                                        sender_socket=client_socket, message=msg)
 
     def _handle_group_message(self, group_name: str, sender_username: str, sender_socket: socket.socket, message: str):
         if group_name not in self.groups:
             self._send_error_response(sender_socket, f"Erro: O grupo '{group_name}' não existe.")
+            return
+        if sender_username not in self.groups[group_name]:
+            self._send_error_response(sender_socket, f"Erro: Você ('{sender_username}') não faz parte do grupo '{group_name}'!")
             return
         formatted_message = (f'({sender_username}, {group_name}, {datetime.now().strftime("%d/%m/%Y - %H:%M:%S")}): '
                              f'{message}')
