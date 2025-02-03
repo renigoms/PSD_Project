@@ -141,9 +141,21 @@ class Client:
                         continue
                     client_socket.send(message.encode('utf-8'))
                     continue
+                 # Divide em até 3 partes: comando, "tag", username e mensagem
+                parts = extract_command_parts(message, 3)
+                if message[:5] == '-msgt' and not parts:
+                    print(
+                        Fore.YELLOW
+                        + 'Formato inválido para mensagem. Use: -msgt tag  <mensagem>'
+                        + '\nSubstitua tag por C mensagem para conectados, D mensagem'
+                        + '\npara desconectados ou T mensage para todos os usuários'
+                        + '\nconectados ou não'
+                        + Style.RESET_ALL
+                    )
+                    continue
                 # Divide em até 4 partes: comando, "tag", username e mensagem
                 parts = extract_command_parts(message, 4)
-                if message.startswith('-msg') and not parts:
+                if message[:5] == '-msg' and not parts:
                     print(
                         Fore.YELLOW
                         + 'Formato inválido para mensagem. Use: -msg tag <usuário|grupo> <mensagem>'
@@ -151,9 +163,20 @@ class Client:
                         + Style.RESET_ALL
                     )
                     continue
-                if message.startswith('-msg') and parts[1].upper() == ('U' or 'G'):
-                    client_socket.send(message.encode('utf-8'))
-                    continue
+                 
+                tags = ['U','G','C','D','T']
+                match message[:5]:
+                    case '-msg':
+                        parts = extract_command_parts(message, 4)
+                        if parts[1].upper() in tags:
+                            client_socket.send(message.encode('utf-8'))
+                            continue
+                    case '-msgt':
+                        parts = extract_command_parts(message, 3)
+                        if parts[1].upper() in tags:
+                            client_socket.send(message.encode('utf-8'))
+                            continue
+                            
                 client_socket.send(message.encode('utf-8'))
         except (ConnectionResetError, BrokenPipeError):
             print(Fore.RED + '\nErro ao enviar mensagem. Conexão encerrada!' + Style.RESET_ALL)
@@ -178,3 +201,4 @@ class Client:
 if __name__ == '__main__':
     client = Client('localhost', 50001)
     client.run()
+    

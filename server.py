@@ -94,7 +94,7 @@ class Server:
                 if 'grupo' in message:
                     self._handle_command_group(message=message, username=username, client_socket=client_socket)
                     continue
-                if '-msg' in message:
+                if message.startswith('-msg'):
                     self._handle_command_message(message, username, client_socket)
                     continue
                 self._send_error_response(client_socket, "Comando desconhecido ou formato inválido.")
@@ -311,7 +311,7 @@ class Server:
               + Style.RESET_ALL)
 
     def _handle_command_message(self, message: str, username: str, client_socket: socket.socket):
-        if message.startswith('-msg') and (parts := extract_command_parts(message, 4)):
+        if (parts := extract_command_parts(message, 4)):
             command, tag, recipient_name, msg = parts
             if command == '-msg':
                 if (tag := tag.upper()) not in ('U', 'G'):
@@ -319,14 +319,41 @@ class Server:
                     return
                 if tag == 'U':
                     self._handle_private_message(recipient_name, sender_username=username,
-                                                 sender_socket=client_socket, message=msg)
+                                                    sender_socket=client_socket, message=msg)
                     return
                 self._handle_group_message(group_name=recipient_name, sender_username=username,
-                                           sender_socket=client_socket, message=msg)
+                                            sender_socket=client_socket, message=msg)
+        if (parts := extract_command_parts(message, 3)):
+            command, tag,  msg = parts
+            if command == '-msgt':
+                match tag.upper():
+                    case 'C':
+                        self.handle_message_logged_in_users(sender_socket=client_socket, sender_client=username, message=msg)
+                        return
+                    case 'D':
+                        pass
+                    case 'T':
+                        pass
+                    case _:
+                        # Comando desconhecido
+                        self._send_error_response(client_socket, 'Comando de grupo desconhecido.')
+
+    def handle_message_logged_in_users(self, sender_socket: socket.socket, sender_client:str,  message:str):
+        for client_socket in self.clients.keys():
+                if client_socket != sender_socket:  # Não envia para o próprio remetente
+                    try:
+                        formatted_message = f'({sender_client}, {datetime.now().strftime("%d/%m/%Y - %H:%M:%S")}): {message}'
+                        self.send_message_safe(client_socket, message=formatted_message)
+                    except (ConnectionResetError, ConnectionAbortedError):
+                        self._remove_client(client_socket)
+        print(Fore.YELLOW + f"Mensagem envida para todos os conectados ao servidor" + Style.RESET_ALL)
 
     def _handle_group_message(self, group_name: str, sender_username: str, sender_socket: socket.socket, message: str):
         if group_name not in self.groups:
             self._send_error_response(sender_socket, f"Erro: O grupo '{group_name}' não existe.")
+            return
+        if sender_username not in self.groups[group_name]:
+            self._send_error_response(sender_socket, f"Erro: Você ('{sender_username}') não faz parte do grupo '{group_name}'!")
             return
         formatted_message = (f'({sender_username}, {group_name}, {datetime.now().strftime("%d/%m/%Y - %H:%M:%S")}): '
                              f'{message}')
