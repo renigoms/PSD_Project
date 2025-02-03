@@ -13,6 +13,9 @@ class Server:
         self.clients = {}  # Armazena os clientes conectados: {socket: username, ...}
         # Armazena os grupos: {group_name: [{socket1: username}, {socket2: username, ...]}
         self.groups = {}
+        self.offline_messages = {}  # Armazena mensagens para usuários desconectados: {username: [mensagem1,
+        # mensagem2, ...]}
+        self.all_users = set()  # Armazena todos os usuários que já se conectaram
         self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.server_socket.setsockopt(
             socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Reutiliza a porta
@@ -54,9 +57,14 @@ class Server:
             Server._send_success_response(
                 client_socket, 'Conexão estabelecida com sucesso!')
             self.clients[client_socket] = username
+            self.all_users.add(username)
             print(
                 Fore.BLUE + f"{username} ({address}) conectou-se ao servidor." + Style.RESET_ALL)
-
+            # Envia mensagens armazenadas para o usuário, se houver
+            if username in self.offline_messages:
+                for msg in self.offline_messages[username]:
+                    Server.send_message_safe(client_socket, msg+'\n')
+                del self.offline_messages[username]  # Remove as mensagens após enviar
             # Mensagem de boas-vindas
             self._broadcast(f"{username} entrou no chat.", client_socket)
 
@@ -311,7 +319,7 @@ class Server:
               + Style.RESET_ALL)
 
     def _handle_command_message(self, message: str, username: str, client_socket: socket.socket):
-        if (parts := extract_command_parts(message, 4)):
+        if parts := extract_command_parts(message, 4):
             command, tag, recipient_name, msg = parts
             if command == '-msg':
                 if (tag := tag.upper()) not in ('U', 'G'):
@@ -319,33 +327,32 @@ class Server:
                     return
                 if tag == 'U':
                     self._handle_private_message(recipient_name, sender_username=username,
-                                                    sender_socket=client_socket, message=msg)
+                                                 sender_socket=client_socket, message=msg)
                     return
                 self._handle_group_message(group_name=recipient_name, sender_username=username,
-                                            sender_socket=client_socket, message=msg)
-        if (parts := extract_command_parts(message, 3)):
-            command, tag,  msg = parts
+                                           sender_socket=client_socket, message=msg)
+        if parts := extract_command_parts(message, 3):
+            command, tag, msg = parts
             if command == '-msgt':
                 match tag.upper():
                     case 'C':
-                        self.handle_message_logged_in_users(sender_socket=client_socket, sender_client=username, message=msg)
+                        self.handle_message_logged_in_users(sender_socket=client_socket, sender_client=username,
+                                                            message=msg)
                         return
                     case 'D':
-                        pass
+                        self.handle_message_disconnected_users(sender_username=username, message=msg)
                     case 'T':
-                        pass
+                        self.handle_message_all_users(sender_socket=client_socket, sender_username=username,
+                                                      message=msg)
                     case _:
                         # Comando desconhecido
-                        self._send_error_response(client_socket, 'Comando de grupo desconhecido.')
+                        self._send_error_response(client_socket, 'Tag inválida. Use C (conectados),'
+                                                                 ' D (desconectados) ou T (todos).')
 
-    def handle_message_logged_in_users(self, sender_socket: socket.socket, sender_client:str,  message:str):
-        for client_socket in self.clients.keys():
-                if client_socket != sender_socket:  # Não envia para o próprio remetente
-                    try:
-                        formatted_message = f'({sender_client}, {datetime.now().strftime("%d/%m/%Y - %H:%M:%S")}): {message}'
-                        self.send_message_safe(client_socket, message=formatted_message)
-                    except (ConnectionResetError, ConnectionAbortedError):
-                        self._remove_client(client_socket)
+    def handle_message_logged_in_users(self, sender_socket: socket.socket, sender_client: str, message: str):
+        formatted_message = (f'({sender_client}, {datetime.now().strftime("%d/%m/%Y - %H:%M:%S")}):'
+                             f' {message}')
+        self._broadcast(message=formatted_message, sender_socket=sender_socket)
         print(Fore.YELLOW + f"Mensagem envida para todos os conectados ao servidor" + Style.RESET_ALL)
 
     def _handle_group_message(self, group_name: str, sender_username: str, sender_socket: socket.socket, message: str):
@@ -353,7 +360,8 @@ class Server:
             self._send_error_response(sender_socket, f"Erro: O grupo '{group_name}' não existe.")
             return
         if sender_username not in self.groups[group_name]:
-            self._send_error_response(sender_socket, f"Erro: Você ('{sender_username}') não faz parte do grupo '{group_name}'!")
+            self._send_error_response(sender_socket,
+                                      f"Erro: Você ('{sender_username}') não faz parte do grupo '{group_name}'!")
             return
         formatted_message = (f'({sender_username}, {group_name}, {datetime.now().strftime("%d/%m/%Y - %H:%M:%S")}): '
                              f'{message}')
@@ -365,6 +373,26 @@ class Server:
                     except (ConnectionResetError, ConnectionAbortedError):
                         self._remove_client(client_socket)
         print(Fore.YELLOW + f"Mensagem enviada para o grupo '{group_name}' por {sender_username}." + Style.RESET_ALL)
+
+    def handle_message_disconnected_users(self, sender_username: str, message: str, suppress_print: bool = False):
+        """
+        Envia uma mensagem para todos os usuários desconectados.
+        """
+        formatted_message = f'({sender_username}, {datetime.now().strftime("%d/%m/%Y - %H:%M:%S")}): {message}'
+        disconnected_users = self.all_users - set(self.clients.values())
+        for username in disconnected_users:
+            if username not in self.clients.values():  # Verifica se o usuário está desconectado
+                if username not in self.offline_messages:
+                    self.offline_messages[username] = []
+                self.offline_messages[username].append(formatted_message)
+        if not suppress_print:
+            print(Fore.YELLOW + f"Mensagem enviada para todos os usuários desconectados." + Style.RESET_ALL)
+
+    def handle_message_all_users(self, sender_socket: socket.socket, sender_username: str, message: str):
+        self.handle_message_disconnected_users(sender_username=sender_username, message=message, suppress_print=True)
+        formatted_message = f'({sender_username}, {datetime.now().strftime("%d/%m/%Y - %H:%M:%S")}): {message}'
+        self._broadcast(message=formatted_message, sender_socket=sender_socket)
+        print(Fore.YELLOW + f"Mensagem enviada para todos os usuários (conectados e desconectados)." + Style.RESET_ALL)
 
 
 if __name__ == '__main__':
