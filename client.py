@@ -141,7 +141,7 @@ class Client:
                         continue
                     client_socket.send(message.encode('utf-8'))
                     continue
-                 # Divide em até 3 partes: comando, "tag", username e mensagem
+                    # Divide em até 3 partes: comando, "tag", username e mensagem
                 parts = extract_command_parts(message, 3)
                 if message[:5] == '-msgt' and not parts:
                     print(
@@ -164,7 +164,7 @@ class Client:
                     )
                     continue
                  
-                tags = ['U','G','C','D','T']
+                tags = ['U', 'G', 'C', 'D', 'T']
                 match message[:5]:
                     case '-msg':
                         parts = extract_command_parts(message, 4)
