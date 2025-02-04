@@ -155,7 +155,13 @@ class Server:
                 except (ConnectionResetError, ConnectionAbortedError):
                     self._remove_client(client_socket)
                 return
-        sender_socket.send((Fore.RED + f'Erro: {recipient_name} não encontrado' + Style.RESET_ALL).encode())
+        disconnected_users = self.all_users - set(self.clients.values())
+        for username in disconnected_users:
+            if username not in self.clients.values() and username == recipient_name:  # Verifica se o usuário está desconectado
+                if username not in self.offline_messages:
+                    self.offline_messages[username] = []
+                self.offline_messages[username].append(message)
+        sender_socket.send((Fore.RED + f'Erro: {recipient_name} não encontrado ou desconectado !' + Style.RESET_ALL).encode())
 
     def _broadcast(self, message: str, sender_socket: socket.socket = None):
         for client_socket in list(self.clients.keys()):
