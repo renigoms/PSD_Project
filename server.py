@@ -391,11 +391,11 @@ class Server:
                         self._remove_client(client_socket)
             if not member_found and member != sender_username:
                 offline_members.append(member)
-        if offline_members.index != 0:
-            for offline_member in offline_members:
-                if offline_member not in self.offline_messages:
-                    self.offline_messages[offline_member] = []
-                self.offline_messages[offline_member].append(formatted_message)
+       
+        for offline_member in offline_members:
+            if offline_member not in self.offline_messages:
+                self.offline_messages[offline_member] = []
+            self.offline_messages[offline_member].append(formatted_message)
 
         print(Fore.YELLOW + f"Mensagem enviada para o grupo '{group_name}' por {sender_username}." + Style.RESET_ALL)
 
