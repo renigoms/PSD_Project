@@ -97,11 +97,11 @@ class Server:
                     case '-listarusuarios':
                         self._send_user_list(client_socket)
                         continue
-                if 'grupo' in message:
-                    self._handle_command_group(message=message, username=username, client_socket=client_socket)
-                    continue
                 if message.startswith('-msg'):
                     self._handle_command_message(message, username, client_socket)
+                    continue
+                if 'grupo' in message:
+                    self._handle_command_group(message=message, username=username, client_socket=client_socket)
                     continue
                 self._send_error_response(client_socket, "Comando desconhecido ou formato inválido.")
                 continue
