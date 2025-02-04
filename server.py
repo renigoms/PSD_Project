@@ -379,13 +379,23 @@ class Server:
             return
         formatted_message = (f'({sender_username}, {group_name}, {datetime.now().strftime("%d/%m/%Y - %H:%M:%S")}): '
                              f'{message}')
+        offline_members = []
         for member in self.groups[group_name]:
+            member_found = False
             for client_socket, username in self.clients.items():
                 if member == username and client_socket != sender_socket:  # Não envia para o próprio remetente
                     try:
                         self.send_message_safe(client_socket, formatted_message)
+                        member_found = True
                     except (ConnectionResetError, ConnectionAbortedError):
                         self._remove_client(client_socket)
+            if not member_found and member != sender_username:
+                offline_members.append(member)
+            for offline_member in offline_members:
+                if offline_member not in self.offline_messages:
+                    self.offline_messages[offline_member] = []
+                self.offline_messages[offline_member].append(formatted_message)
+
         print(Fore.YELLOW + f"Mensagem enviada para o grupo '{group_name}' por {sender_username}." + Style.RESET_ALL)
 
     def handle_message_disconnected_users(self, sender_username: str, message: str, suppress_print: bool = False):
